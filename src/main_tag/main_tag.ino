@@ -90,7 +90,7 @@ vec2 mul(const mat2 &mat, const vec2 v) {
 typedef struct {
   vec2 pos, front;
 } pose;
-constexpr pose WORLD_0 = {{0,0},{1,0}};
+constexpr pose WORLD_0 = { { 0, 0 }, { 1, 0 } };
 
 const mat2 orientation(const pose &pose) {
   return { pose.front, left(pose.front) };
@@ -127,7 +127,7 @@ const float wrap(const float val, const float min, const float max) {
 }
 
 const float wrap_rad(const float val) {
-  return wrap(val,-M_PI,M_PI);
+  return wrap(val, -M_PI, M_PI);
 }
 // #define DEG_TO_RAD M_1_PIf * 180.0f
 // #define RAD_TO_DEG M_PIf / 180.0f
@@ -150,10 +150,10 @@ public:
   const angle clean() const {
     return angle(wrap_rad(val));
   }
-  static angle from_rad(float rad){
+  static angle from_rad(float rad) {
     return rad;
   }
-  static angle from_deg(float deg){
+  static angle from_deg(float deg) {
     return DEG_TO_RAD * deg;
   }
 };
@@ -171,7 +171,7 @@ angle angle_diff(const angle a, const angle b) {
 
 // #undef DEG_TO_RAD
 // #undef RAD_TO_DEG
-const angle orientation_of_normal(const vec2 v_norm){
+const angle orientation_of_normal(const vec2 v_norm) {
   return angle::from_rad(std::atan2f(v_norm.y, v_norm.x));
 }
 const angle orientation(const vec2 v) {
@@ -184,8 +184,8 @@ const angle signed_angle_between(const vec2 a, const vec2 b) {
   return std::atan2(cross(a_norm, b_norm), dot(a_norm, b_norm));
 }
 const polar to_polar(const vec2 v) {
-  const float v_len=len(v);
-  const angle rot=orientation_of_normal(div(v,v_len));
+  const float v_len = len(v);
+  const angle rot = orientation_of_normal(div(v, v_len));
   return { v_len, rot.rad() };
 }
 
@@ -301,28 +301,33 @@ const std::optional<vec2> tdoa(const vec2 *anchors, const float *pings,
 typedef std::array<vec2, 2> tag_positions;
 
 void print_pose(const pose &pose) {
-  if(DEBUG_OUTPUT){
+  if (DEBUG_OUTPUT) {
     Serial.printf("pose x:%.2f y:%.2f front x:%.2f y:%.2f rot:%.2f\r\n", pose.pos.x, pose.pos.y, pose.front.x, pose.front.y, orientation_of_normal(pose.front).deg());
-  }
-  else{
-    Serial.printf("%.4f,%.4f,%.4f",pose.pos.x,pose.pos.y, orientation_of_normal(pose.front).deg());
+  } else {
+    Serial.printf("%.4f,%.4f,%.4f\r\n", pose.pos.x, pose.pos.y, orientation_of_normal(pose.front).deg());
   }
 }
 pose find_rover_pose(const pose &initial_rob_pose, const tag_positions &initial_tags,
                      const tag_positions &measured) {
-  const pose frame_initial = {
-    lerp(initial_tags[0], initial_tags[1], 0.5f),
-    normalize(sub(initial_tags[1], initial_tags[0]))
-  };
-  // print_pose(frame_initial);
+  static bool prep_pose = false;
+  static pose local_initial_pose;
   const pose frame_meas = {
     lerp(measured[0], measured[1], 0.5f),
     normalize(sub(measured[1], measured[0]))
   };
+  if (prep_pose) {
+    return to_world(frame_meas, local_initial_pose);
+  }
+  prep_pose = true;
+  const pose frame_initial = {
+    lerp(initial_tags[0], initial_tags[1], 0.5f),
+    normalize(sub(initial_tags[1], initial_tags[0]))
+  };
+  local_initial_pose = to_local(frame_initial, initial_rob_pose);
+  // print_pose(frame_initial);
+
   // print_pose(frame_meas);
-  a3_math::pose rover = to_world(frame_meas, to_local(frame_initial, initial_rob_pose));
-  rover.front=a3_math::normalize(rover.front);
-  return rover;
+  return to_world(frame_meas, local_initial_pose);
 }
 }  // namespace a3_pose
 
@@ -340,10 +345,10 @@ bool wifiConnected = false;
 
 // Scalable Anchor Configuration
 #define NUM_ANCHORS 4      // Change this to scale the system
-#define FIRST_ANCHOR_ID 0  // Starting ID for anchors (0, 1, 2, 3, ...)
+#define FIRST_ANCHOR_ID 1  // Starting ID for anchors (0, 1, 2, 3, ...)
 
 // Ranging Configuration
-#define FILTER_SIZE 5  // For median filter
+#define FILTER_SIZE 10  // For median filter
 #define MIN_DISTANCE 0
 #define MAX_DISTANCE 10000.0
 
@@ -482,23 +487,24 @@ public:
   std::vector<AnchorData> anchors;
   int current_anchor_index = 0;
   a3_math::vec2 meas_pos = { 0, 0 };
+  
   const int anchor_count() const {
     return anchors.size();
   }
   void initialize_anchors() {
-    
+
     const size_t anchor_count = this->anchor_count();
-    for (int i = 0; i < anchor_count; i++){
+    for (int i = 0; i < anchor_count; i++) {
       anchors[i].anchor_id = FIRST_ANCHOR_ID + i;
-      float *filter=anchors[i].distance_history;
-      for(int j=0;j<FILTER_SIZE;j++)
-        filter[j]=0.0;
+      float *filter = anchors[i].distance_history;
+      for (int j = 0; j < FILTER_SIZE; j++)
+        filter[j] = 0.0;
     }
-    
-    anchors[0 - FIRST_ANCHOR_ID].pos = { 0.0, 0.0 };
+
     anchors[1 - FIRST_ANCHOR_ID].pos = { 1.99, 0.0 };
     anchors[2 - FIRST_ANCHOR_ID].pos = { 0, 2.5 };
     anchors[3 - FIRST_ANCHOR_ID].pos = { 1.99, 2.5 };
+    anchors[4 - FIRST_ANCHOR_ID].pos = { 0.0, 0.0 };
   }
 
 } tag_data;
@@ -514,7 +520,7 @@ AnchorData *getCurrentAnchor(tag_data &tag) {
 void switchToNextAnchor(tag_data &tag) {
   const int old_anchor_idx = getCurrentAnchor(tag)->anchor_id;
   tag.current_anchor_index = (tag.current_anchor_index + 1) % tag.anchor_count();
-  Serial.printf("[INFO] tag %d switch anchor %d -> %d \n", tag.id, old_anchor_idx, getCurrentAnchor(tag)->anchor_id);
+  DEBUG_PRINTF("[INFO] tag %d switch anchor %d -> %d \n", tag.id, old_anchor_idx, getCurrentAnchor(tag)->anchor_id);
 }
 
 // Helper function to validate distance
@@ -739,11 +745,12 @@ void updateFilteredDistance(AnchorData &data) {
 
   if (valid_count <= 0) {
     data.filtered_distance = 0;
+    DEBUG_PRINTF("[INFO] Measured faulty Anchor %d distance to be %.2f cm with filtered res %.2f cm \r\n", data.anchor_id, data.distance, data.filtered_distance);
     return;
   }
   sort_arr(valid_distances, valid_count);
   data.filtered_distance = get_median_of_sorted(valid_distances, valid_count);
-  // Serial.printf("[INFO] Measured Anchor distance to be %.2f cm with filtered res %.2f cm \n",data.distance, data.filtered_distance);
+  DEBUG_PRINTF("[INFO] Measured Anchor %d distance to be %.2f cm with filtered res %.2f cm \r\n", data.anchor_id, data.distance, data.filtered_distance);
 }
 
 // Debug print function
@@ -1248,7 +1255,7 @@ void DWM3000Class::pullLEDLow(int led) {
 
 double DWM3000Class::convertToCM(int DWM3000_ps_units) {
   double res = (double)DWM3000_ps_units * PS_UNIT * SPEED_OF_LIGHT;
-  return max(res, 0.0);
+  return res;
 }
 
 void DWM3000Class::calculateTXRXdiff() {
@@ -1505,6 +1512,16 @@ void DWM3000Class::init() {
   Serial.println("[INFO] Initialization finished.\n");
 }
 
+void resetRadio() {
+  Serial.println("[INFO] Performing radio reset...");
+  DWM3000.softReset();
+  delay(100);
+  DWM3000.clearSystemStatus();
+  DWM3000.configureAsTX();
+  DWM3000.standardRX();
+}
+
+
 void initialize_tags(tag_data *tags, int count) {
   for (int i = 0; i < count; i++) {
     pinMode(tags[i].cs_pin, OUTPUT);
@@ -1625,11 +1642,12 @@ int ranging_state_machine_unknown_state(AnchorData *currentAnchor, int currentAn
 int ranging_state_machine_request_anchor_ranging(AnchorData *currentAnchor,
                                                  const int currentAnchorId,
                                                  const int cs_pin);
-int ranging_state_machine_recieve_first_anchor_ranging(
+
+int ranging_state_machine_receive_first_anchor_ranging(
   AnchorData *currentAnchor, int currentAnchorId);
 int ranging_state_machine_send_second_ranging(AnchorData *currentAnchor,
                                               int currentAnchorId);
-int ranging_state_machine_recieve_second_anchor_ranging(
+int ranging_state_machine_receive_second_anchor_ranging(
   AnchorData *currentAnchor, int currentAnchorId);
 
 int ranging_state_machine_eval(AnchorData *currentAnchor, int currentAnchorId, tag_data &tag);
@@ -1646,8 +1664,8 @@ bool ranging_state_machine(tag_data &tag, int &state) {
       break;
 
     case R_SM_FIRST_RECIEVE:  // Await first response
-      state = ranging_state_machine_recieve_first_anchor_ranging(currentAnchor,
-                                                                 currentAnchorId);
+      state = ranging_state_machine_receive_first_anchor_ranging(
+        currentAnchor, currentAnchorId);
       break;
 
     case R_SM_SECOND_RANGING:
@@ -1656,7 +1674,7 @@ bool ranging_state_machine(tag_data &tag, int &state) {
       break;
 
     case R_SM_SECOND_RECIEVE:  // Await second response
-      state = ranging_state_machine_recieve_second_anchor_ranging(
+      state = ranging_state_machine_receive_second_anchor_ranging(
         currentAnchor, currentAnchorId);
       break;
 
@@ -1674,7 +1692,8 @@ bool ranging_state_machine(tag_data &tag, int &state) {
   return current_tag_done;
 }
 int ranging_state_machine_unknown_state(AnchorData *currentAnchor, int currentAnchorId, tag_data &tag) {
-  Serial.printf("[ERROR] tag %d on cs %d at anchor %d", tag.id, tag.cs_pin, currentAnchorId);
+  Serial.printf("[ERROR] tag %d on cs %d at anchor %d\r\n", tag.id, tag.cs_pin, currentAnchorId);
+  resetRadio();
   return R_SM_RESET;
 }
 
@@ -1694,21 +1713,15 @@ int ranging_state_machine_request_anchor_ranging(AnchorData *currentAnchor,
   return R_SM_FIRST_RECIEVE;                      // Move to wait for response
 }
 
-int ranging_state_machine_recieve_first_anchor_ranging(
-  AnchorData *currentAnchor, int currentAnchorId) {
+int ranging_state_machine_receive_first_anchor_ranging(AnchorData *currentAnchor, int currentAnchorId) {
   rx_status = DWM3000.receivedFrameSucc();
-  if (rx_status == 0)
-    return R_SM_FIRST_RECIEVE;
+  if (rx_status == 0) return R_SM_FIRST_RECIEVE;
   if (rx_status != 1) {
     DWM3000.clearSystemStatus();
     return R_SM_FIRST_RECIEVE;
   }
-  if (DWM3000.ds_isErrorFrame()) {
-    return R_SM_RESET;
-  }
-  if (DWM3000.ds_getStage() == 2) {
-    return R_SM_SECOND_RANGING;
-  }
+  if (DWM3000.ds_isErrorFrame()) { return R_SM_RESET; }
+  if (DWM3000.ds_getStage() == 2) { return R_SM_SECOND_RANGING; }
   DWM3000.ds_sendErrorFrame();
   return R_SM_RESET;
 }
@@ -1730,7 +1743,7 @@ int ranging_state_machine_send_second_ranging(AnchorData *currentAnchor,
   return R_SM_SECOND_RECIEVE;  // Move to wait for Report
 }
 
-int ranging_state_machine_recieve_second_anchor_ranging(
+int ranging_state_machine_receive_second_anchor_ranging(
   AnchorData *currentAnchor, int currentAnchorId) {
   if (rx_status = DWM3000.receivedFrameSucc())  // Report Received
   {
@@ -1801,7 +1814,7 @@ bool eval_state_machine() {
   return true;
 }
 a3_math::pose calculate_rover_pose() {
-  constexpr a3_math::pose initial_rob_pose=a3_math::WORLD_0;
+  constexpr a3_math::pose initial_rob_pose = a3_math::WORLD_0;
   a3_math::tag_positions initial_tags{};
   initial_tags[0] = tags[0].pos;
   initial_tags[1] = tags[1].pos;
@@ -1817,10 +1830,11 @@ a3_math::pose calculate_rover_pose() {
   return a3_math::find_rover_pose(initial_rob_pose, initial_tags, measured);
 }
 long c = 0;
-unsigned long last_print_time = millis();
+unsigned long last_print_time = 0;
 double avg = 0.0;
 
 void publish_rover_pose(a3_math::pose pose) {
+  // #if DEBUG_OUTPUT
   unsigned long cur_time = millis();
   unsigned long delta = cur_time - last_print_time;
   last_print_time = cur_time;
@@ -1830,10 +1844,10 @@ void publish_rover_pose(a3_math::pose pose) {
   }
   avg = (avg * c + delta) / (c + 1);
   ++c;
-  Serial.printf(
-    "[INFO] Pose Nr. %ld: after %lu ms (avg: %.2f ms)\r\n\t",
+  DEBUG_PRINTF(
+    "[INFO] Pose Nr. %ld: after %lu ms (avg: %.2f ms)\r\n",
     c, delta, avg);
-
+  // #endif
   a3_math::print_pose(pose);
 }
 #pragma endregion eval_state_machine

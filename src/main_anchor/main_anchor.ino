@@ -3,10 +3,21 @@
 // SPI Setup
 #define RST_PIN 27
 #define CHIP_SELECT_PIN 21
+#define DEBUG_OUTPUT 0
+
+#if DEBUG_OUTPUT
+#define DEBUG_PRINTLN(...) Serial.println(__VA_ARGS__)
+#define DEBUG_PRINT(...) Serial.print(__VA_ARGS__)
+#define DEBUG_PRINTF(...) Serial.printf(__VA_ARGS__)
+#else
+#define DEBUG_PRINTLN(...)
+#define DEBUG_PRINT(...)
+#define DEBUG_PRINTF(...)
+#endif
 
 // Set to 1 for Anchor 1, 2 for Anchor 2
-#define ANCHOR_ID 0
-#define RESPONSE_TIMEOUT_MS 10 // Maximum time to wait for a response
+#define ANCHOR_ID 4
+#define RESPONSE_TIMEOUT_MS 100  // Maximum time to wait for a response
 unsigned long last_ranging_time = 0;
 #define MAX_RETRIES 3
 int retry_count = 0;
@@ -99,14 +110,14 @@ static long long tx = 0;
 #define INDIRECT_PTR_B_REG 0x1E
 #define IN_PTR_CFG_REG 0x1F
 
-#define TRANSMIT_DELAY 0x3B9ACA00 // //0x77359400
+#define TRANSMIT_DELAY 0x3B9ACA00  // //0x77359400
 
 #define TRANSMIT_DIFF 0x1FF
 
-#define NS_UNIT 4.0064102564102564  // ns
-#define PS_UNIT 15.6500400641025641 // ps
+#define NS_UNIT 4.0064102564102564   // ns
+#define PS_UNIT 15.6500400641025641  // ps
 
-#define SPEED_OF_LIGHT 0.029979245800 // in centimetres per picosecond
+#define SPEED_OF_LIGHT 0.029979245800  // in centimetres per picosecond
 
 #define CLOCK_OFFSET_CHAN_5_CONSTANT -0.5731e-3f
 #define CLOCK_OFFSET_CHAN_9_CONSTANT -0.1252e-3f
@@ -114,16 +125,14 @@ static long long tx = 0;
 // Offsets
 #define NO_OFFSET 0x0
 
-#define DEBUG_OUTPUT 0 // Turn to 1 to get all reads, writes, etc. as info in the console
 static int ANTENNA_DELAY = 16350;
 
 int led_status = 0;
 
-int destination = 0x0; // Default Values for Destination and Sender IDs
+int destination = 0x0;  // Default Values for Destination and Sender IDs
 int sender = 0x0;
 
-class DWM3000Class
-{
+class DWM3000Class {
 public:
   static int config[9];
 
@@ -217,6 +226,7 @@ public:
   // Printing
   static void printRoundTripInformation();
   static void printDouble(double val, unsigned int precision, bool linebreak);
+  static void debugRXFrame();
 
 private:
   // Single Bit Settings
@@ -245,13 +255,13 @@ DWM3000Class DWM3000;
 
 // Initial Radio Configuration
 int DWM3000Class::config[] = {
-    CHANNEL_5,         // Channel
-    PREAMBLE_128,      // Preamble Length
-    9,                 // Preamble Code (Same for RX and TX!)
-    PAC8,              // PAC
-    DATARATE_6_8MB,    // Datarate
-    PHR_MODE_STANDARD, // PHR Mode
-    PHR_RATE_850KB     // PHR Rate
+  CHANNEL_5,          // Channel
+  PREAMBLE_128,       // Preamble Length
+  9,                  // Preamble Code (Same for RX and TX!)
+  PAC8,               // PAC
+  DATARATE_6_8MB,     // Datarate
+  PHR_MODE_STANDARD,  // PHR Mode
+  PHR_RATE_850KB      // PHR Rate
 };
 
 /*
@@ -262,8 +272,7 @@ int DWM3000Class::config[] = {
  Selects a SPI device through its Chip Select pin
  @param cs The pin number of the selected SPI device
 */
-void DWM3000Class::spiSelect(uint8_t cs)
-{
+void DWM3000Class::spiSelect(uint8_t cs) {
   pinMode(cs, OUTPUT);
   digitalWrite(cs, HIGH);
 
@@ -273,8 +282,7 @@ void DWM3000Class::spiSelect(uint8_t cs)
 /*
  Initializes the SPI Interface
 */
-void DWM3000Class::begin()
-{
+void DWM3000Class::begin() {
   delay(5);
   pinMode(CHIP_SELECT_PIN, OUTPUT);
   SPI.begin();
@@ -289,20 +297,17 @@ void DWM3000Class::begin()
 /*
  Initializes the chip, checks for a connection and sets up a initial configuration
 */
-void DWM3000Class::init()
-{
+void DWM3000Class::init() {
   Serial.println("\n+++ DecaWave DWM3000 Test +++\n");
 
-  if (!checkForDevID())
-  {
+  if (!checkForDevID()) {
     Serial.println("[ERROR] Dev ID is wrong! Aborting!");
     return;
   }
 
   setBitHigh(GEN_CFG_AES_LOW_REG, 0x10, 4);
 
-  while (!checkForIDLE())
-  {
+  while (!checkForIDLE()) {
     Serial.println("[WARNING] IDLE FAILED (stage 1)");
     delay(100);
   }
@@ -311,8 +316,7 @@ void DWM3000Class::init()
 
   delay(200);
 
-  while (!checkForIDLE())
-  {
+  while (!checkForIDLE()) {
     Serial.println("[WARNING] IDLE FAILED (stage 2)");
     delay(100);
   }
@@ -322,8 +326,7 @@ void DWM3000Class::init()
   uint32_t bias_tune = readOTP(0xA);
   bias_tune = (bias_tune >> 16) & BIAS_CTRL_BIAS_MASK;
 
-  if (ldo_low != 0 && ldo_high != 0 && bias_tune != 0)
-  {
+  if (ldo_low != 0 && ldo_high != 0 && bias_tune != 0) {
     write(0x11, 0x1F, bias_tune);
 
     write(0x0B, 0x08, 0x0100);
@@ -331,58 +334,56 @@ void DWM3000Class::init()
 
   int xtrim_value = readOTP(0x1E);
 
-  xtrim_value = xtrim_value == 0 ? 0x2E : xtrim_value; // if xtrim_value from OTP memory is 0, choose 0x2E as default value
+  xtrim_value = xtrim_value == 0 ? 0x2E : xtrim_value;  // if xtrim_value from OTP memory is 0, choose 0x2E as default value
 
   write(FS_CTRL_REG, 0x14, xtrim_value);
-  if (DEBUG_OUTPUT)
-    Serial.print("xtrim: ");
-  if (DEBUG_OUTPUT)
-    Serial.println(xtrim_value);
+  DEBUG_PRINTF("xtrim: %d\n", xtrim_value);
+
 
   writeSysConfig();
 
-  write(0x00, 0x3C, 0xFFFFFFFF); // Set Status Enable
+  write(0x00, 0x3C, 0xFFFFFFFF);  // Set Status Enable
   write(0x00, 0x40, 0xFFFF);
 
-  write(0x0A, 0x00, 0x000900, 3); // AON_DIG_CFG register setup; sets up auto-rx calibration and on-wakeup GO2IDLE  //0xA
+  write(0x0A, 0x00, 0x000900, 3);  // AON_DIG_CFG register setup; sets up auto-rx calibration and on-wakeup GO2IDLE  //0xA
 
   /*
    * Set RX and TX config
    */
-  write(0x3, 0x1C, 0x10000240); // DGC_CFG0
+  write(0x3, 0x1C, 0x10000240);  // DGC_CFG0
 
-  write(0x3, 0x20, 0x1B6DA489); // DGC_CFG1
+  write(0x3, 0x20, 0x1B6DA489);  // DGC_CFG1
 
-  write(0x3, 0x38, 0x0001C0FD); // DGC_LUT_0
+  write(0x3, 0x38, 0x0001C0FD);  // DGC_LUT_0
 
-  write(0x3, 0x3C, 0x0001C43E); // DGC_LUT_1
+  write(0x3, 0x3C, 0x0001C43E);  // DGC_LUT_1
 
-  write(0x3, 0x40, 0x0001C6BE); // DGC_LUT_2
+  write(0x3, 0x40, 0x0001C6BE);  // DGC_LUT_2
 
-  write(0x3, 0x44, 0x0001C77E); // DGC_LUT_3
+  write(0x3, 0x44, 0x0001C77E);  // DGC_LUT_3
 
-  write(0x3, 0x48, 0x0001CF36); // DGC_LUT_4
+  write(0x3, 0x48, 0x0001CF36);  // DGC_LUT_4
 
-  write(0x3, 0x4C, 0x0001CFB5); // DGC_LUT_5
+  write(0x3, 0x4C, 0x0001CFB5);  // DGC_LUT_5
 
-  write(0x3, 0x50, 0x0001CFF5); // DGC_LUT_6
+  write(0x3, 0x50, 0x0001CFF5);  // DGC_LUT_6
 
-  write(0x3, 0x18, 0xE5E5); // THR_64 value set to 0x32
+  write(0x3, 0x18, 0xE5E5);  // THR_64 value set to 0x32
   int f = read(0x4, 0x20);
 
   // SET PAC TO 32 (0x00) reg:06:00 bits:1-0, bit 4 to 0 (00001100) (0xC)
   write(0x6, 0x0, 0x81101C);
 
-  write(0x07, 0x34, 0x4); // Enable temp sensor readings
+  write(0x07, 0x34, 0x4);  // Enable temp sensor readings
 
   /*
    * Things to do as documented in https://gist.github.com/egnor/455d510e11c22deafdec14b09da5bf54
    */
-  write(0x07, 0x48, 0x14);       // LDO_RLOAD to 0x14 //0x7
-  write(0x07, 0x1A, 0x0E);       // RF_TX_CTRL_1 to 0x0E
-  write(0x07, 0x1C, 0x1C071134); // RF_TX_CTRL_2 to 0x1C071134 (due to channel 5, else (9) to 0x1C010034)
-  write(0x09, 0x00, 0x1F3C);     // PLL_CFG to 0x1F3C (due to channel 5, else (9) to 0x0F3C)  //0x9
-  write(0x09, 0x80, 0x81);       // PLL_CAL config to 0x81
+  write(0x07, 0x48, 0x14);        // LDO_RLOAD to 0x14 //0x7
+  write(0x07, 0x1A, 0x0E);        // RF_TX_CTRL_1 to 0x0E
+  write(0x07, 0x1C, 0x1C071134);  // RF_TX_CTRL_2 to 0x1C071134 (due to channel 5, else (9) to 0x1C010034)
+  write(0x09, 0x00, 0x1F3C);      // PLL_CFG to 0x1F3C (due to channel 5, else (9) to 0x0F3C)  //0x9
+  write(0x09, 0x80, 0x81);        // PLL_CAL config to 0x81
 
   write(0x11, 0x04, 0xB40200);
 
@@ -393,26 +394,23 @@ void DWM3000Class::init()
 /*
  Writes the initial configuration to the chip
 */
-void DWM3000Class::writeSysConfig()
-{
+void DWM3000Class::writeSysConfig() {
   int usr_cfg = (STDRD_SYS_CONFIG & 0xFFF) | (config[5] << 3) | (config[6] << 4);
 
   write(GEN_CFG_AES_LOW_REG, 0x10, usr_cfg);
 
-  if (config[2] > 24)
-  {
+  if (config[2] > 24) {
     Serial.println("[ERROR] SCP ERROR! TX & RX Preamble Code higher than 24!");
   }
 
   int otp_write = 0x1400;
 
-  if (config[1] >= 256)
-  {
+  if (config[1] >= 256) {
     otp_write |= 0x04;
   }
 
-  write(OTP_IF_REG, 0x08, otp_write); // set OTP config
-  write(DRX_REG, 0x00, 0x00, 1);      // reset DTUNE0_CONFIG
+  write(OTP_IF_REG, 0x08, otp_write);  // set OTP config
+  write(DRX_REG, 0x00, 0x00, 1);       // reset DTUNE0_CONFIG
 
   write(DRX_REG, 0x0, config[3]);
 
@@ -423,21 +421,21 @@ void DWM3000Class::writeSysConfig()
 
   write(DRX_REG, 0x0C, 0xAF5F584C);
 
-  int chan_ctrl_val = read(GEN_CFG_AES_HIGH_REG, 0x14); // Fetch and adjust CHAN_CTRL data
+  int chan_ctrl_val = read(GEN_CFG_AES_HIGH_REG, 0x14);  // Fetch and adjust CHAN_CTRL data
   chan_ctrl_val &= (~0x1FFF);
 
-  chan_ctrl_val |= config[0]; // Write RF_CHAN
+  chan_ctrl_val |= config[0];  // Write RF_CHAN
 
   chan_ctrl_val |= 0x1F00 & (config[2] << 8);
   chan_ctrl_val |= 0xF8 & (config[2] << 3);
   chan_ctrl_val |= 0x06 & (0x01 << 1);
 
-  write(GEN_CFG_AES_HIGH_REG, 0x14, chan_ctrl_val); // Write new CHAN_CTRL data with updated values
+  write(GEN_CFG_AES_HIGH_REG, 0x14, chan_ctrl_val);  // Write new CHAN_CTRL data with updated values
 
   int tx_fctrl_val = read(GEN_CFG_AES_LOW_REG, 0x24);
 
-  tx_fctrl_val |= (config[1] << 12); // Add preamble length
-  tx_fctrl_val |= (config[4] << 10); // Add data rate
+  tx_fctrl_val |= (config[1] << 12);  // Add preamble length
+  tx_fctrl_val |= (config[4] << 10);  // Add data rate
 
   write(GEN_CFG_AES_LOW_REG, 0x24, tx_fctrl_val);
 
@@ -446,8 +444,7 @@ void DWM3000Class::writeSysConfig()
   int rf_tx_ctrl_2 = 0x1C071134;
   int pll_conf = 0x0F3C;
 
-  if (config[0])
-  {
+  if (config[0]) {
     rf_tx_ctrl_2 &= ~0x00FFFF;
     rf_tx_ctrl_2 |= 0x000001;
     pll_conf &= 0x00FF;
@@ -465,26 +462,21 @@ void DWM3000Class::writeSysConfig()
 
   write(GEN_CFG_AES_LOW_REG, 0x44, 0x02);
 
-  write(PMSC_REG, 0x04, 0x300200); // Set clock to auto mode
+  write(PMSC_REG, 0x04, 0x300200);  // Set clock to auto mode
 
   write(PMSC_REG, 0x08, 0x0138);
 
   int success = 0;
-  for (int i = 0; i < 100; i++)
-  {
-    if (read(GEN_CFG_AES_LOW_REG, 0x0) & 0x2)
-    {
+  for (int i = 0; i < 100; i++) {
+    if (read(GEN_CFG_AES_LOW_REG, 0x0) & 0x2) {
       success = 1;
       break;
     }
   }
 
-  if (!success)
-  {
+  if (!success) {
     Serial.println("[ERROR] Couldn't lock PLL Clock!");
-  }
-  else
-  {
+  } else {
     Serial.println("[INFO] PLL is now locked.");
   }
 
@@ -497,36 +489,31 @@ void DWM3000Class::writeSysConfig()
 
   write(RX_TUNE_REG, 0x19, 0xF0);
 
-  int ldo_ctrl_val = read(RF_CONF_REG, 0x48); // Save original LDO_CTRL data
+  int ldo_ctrl_val = read(RF_CONF_REG, 0x48);  // Save original LDO_CTRL data
   int tmp_ldo = (0x105 | 0x100 | 0x4 | 0x1);
 
   write(RF_CONF_REG, 0x48, tmp_ldo);
 
-  write(EXT_SYNC_REG, 0x0C, 0x020000); // Calibrate RX
+  write(EXT_SYNC_REG, 0x0C, 0x020000);  // Calibrate RX
 
   int l = read(0x04, 0x0C);
 
   delay(20);
 
-  write(EXT_SYNC_REG, 0x0C, 0x11); // Enable calibration
+  write(EXT_SYNC_REG, 0x0C, 0x11);  // Enable calibration
 
   int succ = 0;
-  for (int i = 0; i < 100; i++)
-  {
-    if (read(EXT_SYNC_REG, 0x20))
-    {
+  for (int i = 0; i < 100; i++) {
+    if (read(EXT_SYNC_REG, 0x20)) {
       succ = 1;
       break;
     }
     delay(10);
   }
 
-  if (succ)
-  {
+  if (succ) {
     Serial.println("[INFO] PGF calibration complete.");
-  }
-  else
-  {
+  } else {
     Serial.println("[ERROR] PGF calibration failed!");
   }
 
@@ -534,38 +521,34 @@ void DWM3000Class::writeSysConfig()
   write(EXT_SYNC_REG, 0x20, 0x01);
 
   int rx_cal_res = read(EXT_SYNC_REG, 0x14);
-  if (rx_cal_res == 0x1fffffff)
-  {
+  if (rx_cal_res == 0x1fffffff) {
     Serial.println("[ERROR] PGF_CAL failed in stage I!");
   }
   rx_cal_res = read(EXT_SYNC_REG, 0x1C);
-  if (rx_cal_res == 0x1fffffff)
-  {
+  if (rx_cal_res == 0x1fffffff) {
     Serial.println("[ERROR] PGF_CAL failed in stage Q!");
   }
 
-  write(RF_CONF_REG, 0x48, ldo_ctrl_val); // Restore original LDO_CTRL data
+  write(RF_CONF_REG, 0x48, ldo_ctrl_val);  // Restore original LDO_CTRL data
 
-  write(0x0E, 0x02, 0x01); // Enable full CIA diagnostics to get signal strength information
+  write(0x0E, 0x02, 0x01);  // Enable full CIA diagnostics to get signal strength information
 
-  setTXAntennaDelay(ANTENNA_DELAY); // set default antenna delay
+  setTXAntennaDelay(ANTENNA_DELAY);  // set default antenna delay
 }
 
 /*
  Configures the chip for usage as a Transfer Device
 */
-void DWM3000Class::configureAsTX()
-{
-  write(RF_CONF_REG, 0x1C, 0x34); // write pg_delay
+void DWM3000Class::configureAsTX() {
+  write(RF_CONF_REG, 0x1C, 0x34);  // write pg_delay
   write(GEN_CFG_AES_HIGH_REG, 0x0C, 0xFDFDFDFD);
 }
 
 /*
  Sets the first 4 GPIO pins as output for external measurements and LED usage
 */
-void DWM3000Class::setupGPIO()
-{
-  write(0x05, 0x08, 0xF0); // Set GPIO0 - GPIO3 as OUTPUT on DWM3000
+void DWM3000Class::setupGPIO() {
+  write(0x05, 0x08, 0xF0);  // Set GPIO0 - GPIO3 as OUTPUT on DWM3000
 }
 
 /*
@@ -577,27 +560,23 @@ void DWM3000Class::setupGPIO()
  @param stage Double-sided Ranging is more complicated than regular single-sided Ranging. Therefore,
               stages were introduced to make sure that the right frames get received at the right time. stage is a 3 bit int.
 */
-void DWM3000Class::ds_sendFrame(int stage)
-{
+void DWM3000Class::ds_sendFrame(int stage) {
   setMode(1);
   write(0x14, 0x01, sender & 0xFF);
   write(0x14, 0x02, destination & 0xFF);
   write(0x14, 0x03, stage & 0x7);
   setFrameLength(4);
 
-  TXInstantRX(); // Await response
+  TXInstantRX();  // Await response
 
   bool error = true;
-  for (int i = 0; i < 50; i++)
-  {
-    if (sentFrameSucc())
-    {
+  for (int i = 0; i < 50; i++) {
+    if (sentFrameSucc()) {
       error = false;
       break;
     }
   };
-  if (error)
-  {
+  if (error) {
     Serial.println("[ERROR] Could not send frame successfully!");
   }
 }
@@ -607,8 +586,7 @@ void DWM3000Class::ds_sendFrame(int stage)
  @param t_roundB The time that it took between chip B (this chip) sending an answer and getting a response (rx2 - tx1)
  @param t_replyB The time that the chip took to process the received frame (tx1 - rx1)
 */
-void DWM3000Class::ds_sendRTInfo(int t_roundB, int t_replyB)
-{
+void DWM3000Class::ds_sendRTInfo(int t_roundB, int t_replyB) {
   setMode(1);
   write(0x14, 0x01, destination & 0xFF);
   write(0x14, 0x02, sender & 0xFF);
@@ -630,10 +608,8 @@ void DWM3000Class::ds_sendRTInfo(int t_roundB, int t_replyB)
  @param clk_offset The calculated clock offset between both chips (See DWM3000 User Manual 10.1 for more)
  @return returns the time in units of 15.65ps that the frames were in the air on average (only one direction)
 */
-int DWM3000Class::ds_processRTInfo(int t_roundA, int t_replyA, int t_roundB, int t_replyB, int clk_offset)
-{ // returns ranging time in DWM3000 ps units (~15.65ps per unit)
-  if (DEBUG_OUTPUT)
-  {
+int DWM3000Class::ds_processRTInfo(int t_roundA, int t_replyA, int t_roundB, int t_replyB, int clk_offset) {  // returns ranging time in DWM3000 ps units (~15.65ps per unit)
+  if (DEBUG_OUTPUT) {
     Serial.println("\nProcessing Information:");
     Serial.print("t_roundA: ");
     Serial.println(t_roundA);
@@ -655,15 +631,14 @@ int DWM3000Class::ds_processRTInfo(int t_roundA, int t_replyA, int t_roundB, int
   int combined_rt = (first_rt + second_rt - (reply_diff - (reply_diff * clock_offset))) / 2;
   int combined_rt_raw = (first_rt + second_rt) / 2;
 
-  return combined_rt / 2; // divided by 2 to get just one range
+  return combined_rt / 2;  // divided by 2 to get just one range
 }
 
 /*
  Returns the stage that the frame was sent in
  @return The stage that the frame was sent in (read from the TX_Buffer)
 */
-int DWM3000Class::ds_getStage()
-{
+int DWM3000Class::ds_getStage() {
   return read(0x12, 0x03) & 0b111;
 }
 
@@ -671,16 +646,14 @@ int DWM3000Class::ds_getStage()
  Checks if frame is error frame by checking its mode bits
  @return True if mode == 7; False if anything else
 */
-bool DWM3000Class::ds_isErrorFrame()
-{
+bool DWM3000Class::ds_isErrorFrame() {
   return ((read(0x12, 0x00) & 0x7) == 7);
 }
 
 /*
  Sends a frame that has its mode set to 7 (Error Frame). Instantly switches to receive mode (RX)
 */
-void DWM3000Class::ds_sendErrorFrame()
-{
+void DWM3000Class::ds_sendErrorFrame() {
   Serial.println("[WARNING] Error Frame sent. Reverting back to stage 0.");
   setMode(7);
   setFrameLength(3);
@@ -695,8 +668,7 @@ void DWM3000Class::ds_sendErrorFrame()
  Set the channel that the chip should operate on
  @param data CHANNEL_5 or CHANNEL_9
 */
-void DWM3000Class::setChannel(uint8_t data)
-{
+void DWM3000Class::setChannel(uint8_t data) {
   if (data == CHANNEL_5 || data == CHANNEL_9)
     config[0] = data;
 }
@@ -705,8 +677,7 @@ void DWM3000Class::setChannel(uint8_t data)
  Set the preamble length for frame sending
  @param data See all options below or in DWM3000Constants.h
 */
-void DWM3000Class::setPreambleLength(uint8_t data)
-{
+void DWM3000Class::setPreambleLength(uint8_t data) {
   if (data == PREAMBLE_32 || data == PREAMBLE_64 || data == PREAMBLE_1024 || data == PREAMBLE_256 || data == PREAMBLE_512 || data == PREAMBLE_1024 || data == PREAMBLE_1536 || data == PREAMBLE_2048 || data == PREAMBLE_4096)
     config[1] = data;
 }
@@ -715,8 +686,7 @@ void DWM3000Class::setPreambleLength(uint8_t data)
  Set the preamble code
  @param data Should be between 9 and 12
 */
-void DWM3000Class::setPreambleCode(uint8_t data)
-{
+void DWM3000Class::setPreambleCode(uint8_t data) {
   if (data <= 12 && data >= 9)
     config[2] = data;
 }
@@ -725,8 +695,7 @@ void DWM3000Class::setPreambleCode(uint8_t data)
  Set the PAC size
  @param data PAC4, PAC8, PAC16 or PAC32
 */
-void DWM3000Class::setPACSize(uint8_t data)
-{
+void DWM3000Class::setPACSize(uint8_t data) {
   if (data == PAC4 || data == PAC8 || data == PAC16 || data == PAC32)
     config[3] = data;
 }
@@ -735,8 +704,7 @@ void DWM3000Class::setPACSize(uint8_t data)
  Set the datarate the chip sends and receives on
  @param data DATARATE_6_8_MB or DATARATE_850KB
 */
-void DWM3000Class::setDatarate(uint8_t data)
-{
+void DWM3000Class::setDatarate(uint8_t data) {
   if (data == DATARATE_6_8MB || data == DATARATE_850KB)
     config[4] = data;
 }
@@ -745,8 +713,7 @@ void DWM3000Class::setDatarate(uint8_t data)
  Set the PHR mode for the chip
  @param data PHR_MODE_STANDARD or PHR_MODE_LONG
 */
-void DWM3000Class::setPHRMode(uint8_t data)
-{
+void DWM3000Class::setPHRMode(uint8_t data) {
   if (data == PHR_MODE_STANDARD || data == PHR_MODE_LONG)
     config[5] = data;
 }
@@ -755,8 +722,7 @@ void DWM3000Class::setPHRMode(uint8_t data)
  Set the PHR rate for the chip
  @param data PHR_RATE_6_8MB or PHR_RATE_850KB
 */
-void DWM3000Class::setPHRRate(uint8_t data)
-{
+void DWM3000Class::setPHRRate(uint8_t data) {
   if (data == PHR_RATE_6_8MB || data == PHR_RATE_850KB)
     config[6] = data;
 }
@@ -773,8 +739,7 @@ void DWM3000Class::setPHRRate(uint8_t data)
     * 2-6 - Reserved
     * 7 - Error
 */
-void DWM3000Class::setMode(int mode)
-{
+void DWM3000Class::setMode(int mode) {
   write(0x14, 0x00, mode & 0x7);
 }
 
@@ -782,10 +747,8 @@ void DWM3000Class::setMode(int mode)
  Writes the given data to the chips TX Frame buffer
  @param frame_data The data that should be written onto the chip
 */
-void DWM3000Class::setTXFrame(unsigned long long frame_data)
-{ // deprecated! use write(TX_BUFFER_REG, [...]);
-  if (frame_data > ((pow(2, 8 * 8) - FCS_LEN)))
-  {
+void DWM3000Class::setTXFrame(unsigned long long frame_data) {  // deprecated! use write(TX_BUFFER_REG, [...]);
+  if (frame_data > ((pow(2, 8 * 8) - FCS_LEN))) {
     Serial.println("[ERROR] Frame is too long (> 1023 Bytes - FCS_LEN)!");
     return;
   }
@@ -797,12 +760,10 @@ void DWM3000Class::setTXFrame(unsigned long long frame_data)
  Sets the frames data length in bytes
  @param frameLen The length of the data in bytes
 */
-void DWM3000Class::setFrameLength(int frameLen)
-{ // set Frame length in Bytes
+void DWM3000Class::setFrameLength(int frameLen) {  // set Frame length in Bytes
   frameLen = frameLen + FCS_LEN;
   int curr_cfg = read(0x00, 0x24);
-  if (frameLen > 1023)
-  {
+  if (frameLen > 1023) {
     Serial.println("[ERROR] Frame length + FCS_LEN (2) is longer than 1023. Aborting!");
     return;
   }
@@ -815,8 +776,7 @@ void DWM3000Class::setFrameLength(int frameLen)
  Set the Antenna Delay for delayedTX operations
  @param data Can be anything between 0 and 0xFFFF
 */
-void DWM3000Class::setTXAntennaDelay(int delay)
-{
+void DWM3000Class::setTXAntennaDelay(int delay) {
   ANTENNA_DELAY = delay;
   write(0x01, 0x04, delay);
 }
@@ -825,8 +785,7 @@ void DWM3000Class::setTXAntennaDelay(int delay)
  Set the chips sender ID. As long as the value is not changed, it won't be changed by the program.
  @param senderID The ID that should be set. Can be between 0 and 255. Default is 0
 */
-void DWM3000Class::setSenderID(int senderID)
-{
+void DWM3000Class::setSenderID(int senderID) {
   sender = senderID;
 }
 
@@ -834,8 +793,7 @@ void DWM3000Class::setSenderID(int senderID)
  Set the destination ID. As long as the value is not changed, it won't be changed by the program. If you want to send a second frame, it will still hold the same destination ID!
  @param destID The ID that the frame should be sent to. Can be between 0 and 255. Default is 0
 */
-void DWM3000Class::setDestinationID(int destID)
-{
+void DWM3000Class::setDestinationID(int destID) {
   destination = destID;
 }
 
@@ -847,15 +805,11 @@ void DWM3000Class::setDestinationID(int destID)
  Checks if a frame got received successfully
  @return 1 if successfully received; 2 if RX Status Error occured; 0 if no frame got received
 */
-int DWM3000Class::receivedFrameSucc()
-{
+int DWM3000Class::receivedFrameSucc() {
   int sys_stat = read(GEN_CFG_AES_LOW_REG, 0x44);
-  if ((sys_stat & SYS_STATUS_FRAME_RX_SUCC) > 0)
-  {
+  if ((sys_stat & SYS_STATUS_FRAME_RX_SUCC) > 0) {
     return 1;
-  }
-  else if ((sys_stat & SYS_STATUS_RX_ERR) > 0)
-  {
+  } else if ((sys_stat & SYS_STATUS_RX_ERR) > 0) {
     return 2;
   }
   return 0;
@@ -865,11 +819,9 @@ int DWM3000Class::receivedFrameSucc()
  Checks if a frame got sent successfully
  @return 1 if successfully sent; 2 if TX Status Error occured; 0 if no frame got sent
 */
-int DWM3000Class::sentFrameSucc()
-{ // No frame sent: 0; frame sent: 1; error while sending: 2
+int DWM3000Class::sentFrameSucc() {  // No frame sent: 0; frame sent: 1; error while sending: 2
   int sys_stat = read(GEN_CFG_AES_LOW_REG, 0x44);
-  if ((sys_stat & SYS_STATUS_FRAME_TX_SUCC) == SYS_STATUS_FRAME_TX_SUCC)
-  {
+  if ((sys_stat & SYS_STATUS_FRAME_TX_SUCC) == SYS_STATUS_FRAME_TX_SUCC) {
     return 1;
   }
   return 0;
@@ -879,8 +831,7 @@ int DWM3000Class::sentFrameSucc()
  Returns the senderID of the received frame.
  @return senderID of the received frame by reading out the frames data
 */
-int DWM3000Class::getSenderID()
-{
+int DWM3000Class::getSenderID() {
   return read(0x12, 0x01) & 0xFF;
 }
 
@@ -888,8 +839,7 @@ int DWM3000Class::getSenderID()
  Returns the destinationID of the received frame.
  @return destinationID of the received frame by reading out the frames data
 */
-int DWM3000Class::getDestinationID()
-{
+int DWM3000Class::getDestinationID() {
   return read(0x12, 0x02) & 0xFF;
 }
 
@@ -897,8 +847,7 @@ int DWM3000Class::getDestinationID()
  Checks if the chip has its Power Management System Control (PMSC) module in IDLE mode
  @return True if in IDLE, False if not
  */
-bool DWM3000Class::checkForIDLE()
-{
+bool DWM3000Class::checkForIDLE() {
   return (read(0x0F, 0x30) >> 16 & PMSC_STATE_IDLE) == PMSC_STATE_IDLE || (read(0x00, 0x44) >> 16 & (SPIRDY_MASK | RCINIT_MASK)) == (SPIRDY_MASK | RCINIT_MASK) ? 1 : 0;
 }
 
@@ -906,8 +855,7 @@ bool DWM3000Class::checkForIDLE()
  Checks if SPI can communicate with the chip
  @return 1 if True, 0 if False
 */
-bool DWM3000Class::checkSPI()
-{
+bool DWM3000Class::checkSPI() {
   return checkForDevID();
 }
 
@@ -920,30 +868,28 @@ bool DWM3000Class::checkSPI()
  NOTE: If not using 64MHz PRF: See user manual capter 4.7.2 for an alternative calculation method
  @return The Signal Strength of the received frame in dBm
 */
-double DWM3000Class::getSignalStrength()
-{
+double DWM3000Class::getSignalStrength() {
   int CIRpower = read(0x0C, 0x2C) & 0x1FF;
   int PAC_val = read(0x0C, 0x58) & 0xFFF;
   unsigned int DGC_decision = (read(0x03, 0x60) >> 28) & 0x7;
   double PRF_const = 121.7;
 
-  /*Serial.println("Signal Strength Data:");
-    Serial.print("CIR Power: ");
-    Serial.println(CIRpower);
-    Serial.print("PAC val: ");
-    Serial.println(PAC_val);
-    Serial.print("DGC decision: ");
-    Serial.println(DGC_decision);*/
+  DEBUG_PRINTLN("Signal Strength Data:");
+  DEBUG_PRINT("CIR Power: ");
+  DEBUG_PRINTLN(CIRpower);
+  DEBUG_PRINT("PAC val: ");
+  DEBUG_PRINTLN(PAC_val);
+  DEBUG_PRINT("DGC decision: ");
+  DEBUG_PRINTLN(DGC_decision);
 
-  return 10 * log10((CIRpower * (1 << 21)) / pow(PAC_val, 2)) + (6 * DGC_decision) - PRF_const;
+  return 10 * log10((CIRpower * (1 << 21)) / (PAC_val*PAC_val) + (6 * DGC_decision) - PRF_const;
 }
 
 /*
  Calculates the First Path Signal Strength of the received frame in dBm. Useful to check if a ranging was NLOS or LOS by comparing it to the overall Signal Strength.
  @return The First Path Signal Strength of the received frame in dBm
 */
-double DWM3000Class::getFirstPathSignalStrength()
-{
+double DWM3000Class::getFirstPathSignalStrength() {
   float f1 = (read(0x0C, 0x30) & 0x3FFFFF) >> 2;
   float f2 = (read(0x0C, 0x34) & 0x3FFFFF) >> 2;
   float f3 = (read(0x0C, 0x38) & 0x3FFFFF) >> 2;
@@ -959,8 +905,7 @@ double DWM3000Class::getFirstPathSignalStrength()
  Get the currently set Antenna Delay for delayedTX operations
  .@return Antenna Delay
 */
-int DWM3000Class::getTXAntennaDelay()
-{ // DEPRECATED use ANTENNA_DELAY variable instead!
+int DWM3000Class::getTXAntennaDelay() {  // DEPRECATED use ANTENNA_DELAY variable instead!
   int delay = read(0x01, 0x04) & 0xFFFF;
   return delay;
 }
@@ -969,14 +914,10 @@ int DWM3000Class::getTXAntennaDelay()
  Get the calculated clock offset between this chip and the chip that sent a frame
  @return Calculated clock offset of the other chip
 */
-long double DWM3000Class::getClockOffset()
-{
-  if (config[0] == CHANNEL_5)
-  {
+long double DWM3000Class::getClockOffset() {
+  if (config[0] == CHANNEL_5) {
     return getRawClockOffset() * CLOCK_OFFSET_CHAN_5_CONSTANT / 1000000;
-  }
-  else
-  {
+  } else {
     return getRawClockOffset() * CLOCK_OFFSET_CHAN_9_CONSTANT / 1000000;
   }
 }
@@ -985,14 +926,10 @@ long double DWM3000Class::getClockOffset()
  Get the calculated clock offset from the second chips perspective
  @return Calculated clock offset of this chip from the other chips perspective
 */
-long double DWM3000Class::getClockOffset(int32_t sec_clock_offset)
-{
-  if (config[0] == CHANNEL_5)
-  {
+long double DWM3000Class::getClockOffset(int32_t sec_clock_offset) {
+  if (config[0] == CHANNEL_5) {
     return sec_clock_offset * CLOCK_OFFSET_CHAN_5_CONSTANT / 1000000;
-  }
-  else
-  {
+  } else {
     return sec_clock_offset * CLOCK_OFFSET_CHAN_9_CONSTANT / 1000000;
   }
 }
@@ -1001,20 +938,17 @@ long double DWM3000Class::getClockOffset(int32_t sec_clock_offset)
  Get the raw clockset offset from the register of the chip
  @return Raw clock offset
 */
-int DWM3000Class::getRawClockOffset()
-{
+int DWM3000Class::getRawClockOffset() {
   int raw_offset = read(0x06, 0x29) & 0x1FFFFF;
 
-  if (raw_offset & (1 << 20))
-  {
+  if (raw_offset & (1 << 20)) {
     raw_offset |= ~((1 << 21) - 1);
   }
 
-  if (DEBUG_OUTPUT)
-  {
-    Serial.print("Raw offset: ");
-    Serial.println(raw_offset);
-  }
+
+  DEBUG_PRINTF("Raw offset: %d\n", raw_offset);
+
+
   return raw_offset;
 }
 
@@ -1022,14 +956,12 @@ int DWM3000Class::getRawClockOffset()
  Activates the chips internal temperature sensor and read its temperature
  @return the chips current temperature in °C
 */
-float DWM3000Class::getTempInC()
-{
-  write(0x07, 0x34, 0x04); // enable temp sensor readings
+float DWM3000Class::getTempInC() {
+  write(0x07, 0x34, 0x04);  // enable temp sensor readings
 
-  write(0x08, 0x00, 0x01); // enable poll
+  write(0x08, 0x00, 0x01);  // enable poll
 
-  while (!(read(0x08, 0x04) & 0x01))
-  {
+  while (!(read(0x08, 0x04) & 0x01)) {
   };
 
   int res = read(0x08, 0x08);
@@ -1037,7 +969,7 @@ float DWM3000Class::getTempInC()
   int otp_temp = readOTP(0x09) & 0xFF;
   float tmp = (float)((res - otp_temp) * 1.05f) + 22.0f;
 
-  write(0x08, 0x00, 0x00, 1); // Reset poll enable
+  write(0x08, 0x00, 0x00, 1);  // Reset poll enable
 
   return tmp;
 }
@@ -1046,8 +978,7 @@ float DWM3000Class::getTempInC()
  Reads the internal RX Timestamp. The timestamp is a relative timestamp to the chips internal clock. Units of ~15.65ps. (See DWM3000 User Manual 4.1.7 for more)
  @return The RX Timestamp in units of ~15.65ps
 */
-unsigned long long DWM3000Class::readRXTimestamp()
-{
+unsigned long long DWM3000Class::readRXTimestamp() {
   uint32_t ts_low = read(0x0C, 0x00);
   unsigned long long ts_high = read(0x0C, 0x04) & 0xFF;
 
@@ -1060,8 +991,7 @@ unsigned long long DWM3000Class::readRXTimestamp()
  Reads the internal TX Timestamp. The timestamp is a relative timestamp to the chips internal clock. Units of ~15.65ps. (See DWM3000 User Manual 3.2 for more)
  @return The TX Timestamp in units of ~15.65ps
 */
-unsigned long long DWM3000Class::readTXTimestamp()
-{
+unsigned long long DWM3000Class::readTXTimestamp() {
   unsigned long long ts_low = read(0x00, 0x74);
   unsigned long long ts_high = read(0x00, 0x78) & 0xFF;
 
@@ -1082,8 +1012,7 @@ unsigned long long DWM3000Class::readTXTimestamp()
  @param dataLen The length of the data that should be written
  @return The result of the write operation (typically 0)
 */
-uint32_t DWM3000Class::write(int base, int sub, uint32_t data, int dataLen)
-{
+uint32_t DWM3000Class::write(int base, int sub, uint32_t data, int dataLen) {
   return readOrWriteFullAddress(base, sub, data, dataLen, 1);
 }
 
@@ -1094,8 +1023,7 @@ uint32_t DWM3000Class::write(int base, int sub, uint32_t data, int dataLen)
  @param data The data that should be written
  @return The result of the write operation (typically 0)
 */
-uint32_t DWM3000Class::write(int base, int sub, uint32_t data)
-{
+uint32_t DWM3000Class::write(int base, int sub, uint32_t data) {
   return readOrWriteFullAddress(base, sub, data, 0, 1);
 }
 
@@ -1105,13 +1033,9 @@ uint32_t DWM3000Class::write(int base, int sub, uint32_t data)
  @param sub The chips sub register address
  @return The result of the read operation
 */
-uint32_t DWM3000Class::read(int base, int sub)
-{
+uint32_t DWM3000Class::read(int base, int sub) {
   uint32_t tmp;
   tmp = readOrWriteFullAddress(base, sub, 0, 0, 0);
-  if (DEBUG_OUTPUT)
-    Serial.println("");
-
   return tmp;
 }
 
@@ -1121,8 +1045,7 @@ uint32_t DWM3000Class::read(int base, int sub)
  @param sub The chips sub register address
  @return The result of the read operation
 */
-uint8_t DWM3000Class::read8bit(int base, int sub)
-{
+uint8_t DWM3000Class::read8bit(int base, int sub) {
   return (uint8_t)(read(base, sub) >> 24);
 }
 
@@ -1131,8 +1054,7 @@ uint8_t DWM3000Class::read8bit(int base, int sub)
  @param addr The OTP Memory address
  @return The result of the read operation
  */
-uint32_t DWM3000Class::readOTP(uint8_t addr)
-{
+uint32_t DWM3000Class::readOTP(uint8_t addr) {
   write(OTP_IF_REG, 0x04, addr);
   write(OTP_IF_REG, 0x08, 0x02);
 
@@ -1147,8 +1069,7 @@ uint32_t DWM3000Class::readOTP(uint8_t addr)
  Sets a delay for a future TX operation
  @param delay The delay in units of ~4ns (see DWM3000 User Manual 8.2.2.9 for more info)
 */
-void DWM3000Class::writeTXDelay(uint32_t delay)
-{
+void DWM3000Class::writeTXDelay(uint32_t delay) {
   write(0x00, 0x2C, delay);
 }
 
@@ -1163,8 +1084,7 @@ void DWM3000Class::writeTXDelay(uint32_t delay)
 
  This function calculates the missing delay time, adds it to the frames payload and sets the fixed delay (TRANSMIT_DELAY).
 */
-void DWM3000Class::prepareDelayedTX()
-{
+void DWM3000Class::prepareDelayedTX() {
   long long rx_ts = readRXTimestamp();
 
   uint32_t exact_tx_timestamp = (long long)(rx_ts + TRANSMIT_DELAY) >> 8;
@@ -1194,9 +1114,9 @@ void DWM3000Class::prepareDelayedTX()
 
   write(0x14, 0x01, sender & 0xFF);
   write(0x14, 0x02, destination & 0xFF);
-  write(0x14, 0x03, reply_delay); // set frame content
+  write(0x14, 0x03, reply_delay);  // set frame content
 
-  setFrameLength(7); // Control Byte (1 Byte) + Sender ID (1 Byte) + Dest. ID (1 Byte) + Reply Delay (4 Bytes) = 7 Bytes
+  setFrameLength(7);  // Control Byte (1 Byte) + Sender ID (1 Byte) + Dest. ID (1 Byte) + Reply Delay (4 Bytes) = 7 Bytes
 
   // Write delay to register
   writeTXDelay(exact_tx_timestamp);
@@ -1209,40 +1129,35 @@ void DWM3000Class::prepareDelayedTX()
 /*
  Activates delayed message transfer and switches to receive mode after TX is finished
 */
-void DWM3000Class::delayedTXThenRX()
-{
+void DWM3000Class::delayedTXThenRX() {
   writeFastCommand(0x0F);
 }
 
 /*
  Activates delayed message transfer
 */
-void DWM3000Class::delayedTX()
-{
+void DWM3000Class::delayedTX() {
   writeFastCommand(0x3);
 }
 
 /*
  Performs a standard TX command
 */
-void DWM3000Class::standardTX()
-{
+void DWM3000Class::standardTX() {
   DWM3000Class::writeFastCommand(0x01);
 }
 
 /*
  Performs a standard RX command
 */
-void DWM3000Class::standardRX()
-{
+void DWM3000Class::standardRX() {
   DWM3000Class::writeFastCommand(0x02);
 }
 
 /*
  Performs a TX operation and instantly switches to Receiver mode
 */
-void DWM3000Class::TXInstantRX()
-{
+void DWM3000Class::TXInstantRX() {
   DWM3000Class::writeFastCommand(0x0C);
 }
 
@@ -1253,37 +1168,34 @@ void DWM3000Class::TXInstantRX()
 /*
  Soft resets the chip via software
 */
-void DWM3000Class::softReset()
-{
+void DWM3000Class::softReset() {
   clearAONConfig();
 
-  write(PMSC_REG, 0x04, 0x1); // force clock to FAST_RC/4 clock
+  write(PMSC_REG, 0x04, 0x1);  // force clock to FAST_RC/4 clock
 
-  write(PMSC_REG, 0x00, 0x00, 2); // init reset
+  write(PMSC_REG, 0x00, 0x00, 2);  // init reset
 
   delay(100);
 
-  write(PMSC_REG, 0x00, 0xFFFF); // return back
+  write(PMSC_REG, 0x00, 0xFFFF);  // return back
 
-  write(PMSC_REG, 0x04, 0x00, 1); // set clock back to Auto mode
+  write(PMSC_REG, 0x04, 0x00, 1);  // set clock back to Auto mode
 }
 
 /*
  Resets the Chip by physically pulling the RST_PIN to LOW
 */
-void DWM3000Class::hardReset()
-{
+void DWM3000Class::hardReset() {
   pinMode(RST_PIN, OUTPUT);
-  digitalWrite(RST_PIN, LOW); // set reset pin active low to hard-reset DWM3000 chip
+  digitalWrite(RST_PIN, LOW);  // set reset pin active low to hard-reset DWM3000 chip
   delay(10);
-  pinMode(RST_PIN, INPUT); // get pin back in floating state
+  pinMode(RST_PIN, INPUT);  // get pin back in floating state
 }
 
 /*
  Clears all System Status flags
 */
-void DWM3000Class::clearSystemStatus()
-{
+void DWM3000Class::clearSystemStatus() {
   write(GEN_CFG_AES_LOW_REG, 0x44, 0x3F7FFFFF);
 }
 
@@ -1295,8 +1207,7 @@ void DWM3000Class::clearSystemStatus()
  Pulls a specific external LED to HIGH (tested on Makerfabs DWM3000 board)
  @param led the index of the LED (0 - 2 possible)
  */
-void DWM3000Class::pullLEDHigh(int led)
-{
+void DWM3000Class::pullLEDHigh(int led) {
   if (led > 2)
     return;
   led_status = led_status | (1 << led);
@@ -1307,11 +1218,10 @@ void DWM3000Class::pullLEDHigh(int led)
  Pulls a specific external LED to LOW (tested on Makerfabs DWM3000 board)
  @param led the index of the LED (0 - 2 possible)
  */
-void DWM3000Class::pullLEDLow(int led)
-{
+void DWM3000Class::pullLEDLow(int led) {
   if (led > 2)
     return;
-  led_status = led_status & ~((int)1 << led); // https://stackoverflow.com/questions/47981/how-to-set-clear-and-toggle-a-single-bit
+  led_status = led_status & ~((int)1 << led);  // https://stackoverflow.com/questions/47981/how-to-set-clear-and-toggle-a-single-bit
   write(0x05, 0x0C, led_status);
 }
 
@@ -1324,16 +1234,14 @@ void DWM3000Class::pullLEDLow(int led)
  @param DWM3000_ps_units DWM3000 internal picosecond units. Gets returned from timestamps for example.
  @return The distance in cm
 */
-double DWM3000Class::convertToCM(int DWM3000_ps_units)
-{
+double DWM3000Class::convertToCM(int DWM3000_ps_units) {
   return (double)DWM3000_ps_units * PS_UNIT * SPEED_OF_LIGHT;
 }
 
 /*
  Calculate the Round Trip Time (RTT) for a ping operation and print out the distance in cm
 */
-void DWM3000Class::calculateTXRXdiff()
-{
+void DWM3000Class::calculateTXRXdiff() {
   unsigned long long ping_tx = readTXTimestamp();
   unsigned long long ping_rx = readRXTimestamp();
 
@@ -1365,8 +1273,7 @@ void DWM3000Class::calculateTXRXdiff()
    * Calculate round trip time (see DWM3000 User Manual page 248 for more)
    */
 
-  if (t_reply == 0)
-  { // t_reply is 0 when the calculation could not be done on the PONG side
+  if (t_reply == 0) {  // t_reply is 0 when the calculation could not be done on the PONG side
     return;
   }
 
@@ -1376,9 +1283,8 @@ void DWM3000Class::calculateTXRXdiff()
   long double t_prop_ps = t_prop * PS_UNIT;
 
   long double t_prop_cm = t_prop_ps * SPEED_OF_LIGHT;
-  if (t_prop_cm >= 0)
-  {
-    printDouble(t_prop_cm, 100, false); // second value sets the decimal places. 100 = 2 decimal places, 1000 = 3, 10000 = 4, ...
+  if (t_prop_cm >= 0) {
+    printDouble(t_prop_cm, 100, false);  // second value sets the decimal places. 100 = 2 decimal places, 1000 = 3, 10000 = 4, ...
     Serial.println("cm");
   }
 }
@@ -1390,8 +1296,7 @@ void DWM3000Class::calculateTXRXdiff()
 /*
  Debug Output to print the Round Trip Time (RTT) and essential additional information
 */
-void DWM3000Class::printRoundTripInformation()
-{
+void DWM3000Class::printRoundTripInformation() {
   Serial.println("\nRound Trip Information:");
   long long tx_ts = readTXTimestamp();
   long long rx_ts = readRXTimestamp();
@@ -1408,26 +1313,19 @@ void DWM3000Class::printRoundTripInformation()
  @param precision Precision is 1 followed by the number of zeros for the desired number of decimal places. Example: printDouble (3.14159, 1000); prints 3.141 (three decimal places).
  @param linebreak If True, a linebreak will be added after the print (equal to Serial.println()). If not, no linebreak (equal to Serial.print())
 */
-void DWM3000Class::printDouble(double val, unsigned int precision, bool linebreak)
-{                         // https://forum.arduino.cc/t/printing-a-double-variable/44327/2
-  Serial.print(int(val)); // print the integer part
-  Serial.print(".");      // print the decimal point
+void DWM3000Class::printDouble(double val, unsigned int precision, bool linebreak) {  // https://forum.arduino.cc/t/printing-a-double-variable/44327/2
+  Serial.print(int(val));                                                             // print the integer part
+  Serial.print(".");                                                                  // print the decimal point
   unsigned int frac;
-  if (val >= 0)
-  {
+  if (val >= 0) {
     frac = (val - int(val)) * precision;
-  }
-  else
-  {
+  } else {
     frac = (int(val) - val) * precision;
   }
-  if (linebreak)
-  {
-    Serial.println(frac, DEC); // print the fraction with linebreak
-  }
-  else
-  {
-    Serial.print(frac, DEC); // print the fraction without linebreak
+  if (linebreak) {
+    Serial.println(frac, DEC);  // print the fraction with linebreak
+  } else {
+    Serial.print(frac, DEC);  // print the fraction without linebreak
   }
 }
 
@@ -1446,15 +1344,11 @@ void DWM3000Class::printDouble(double val, unsigned int precision, bool linebrea
  @param shift The bit that should be modified, relative to the base and sub address (0 for bit 0, 1 for bit 1, etc.)
  @param b The state that the bit should be set to. True if should be set to 1, False if 0
 */
-void DWM3000Class::setBit(int reg_addr, int sub_addr, int shift, bool b)
-{
+void DWM3000Class::setBit(int reg_addr, int sub_addr, int shift, bool b) {
   uint8_t tmpByte = read8bit(reg_addr, sub_addr);
-  if (b)
-  {
+  if (b) {
     bitSet(tmpByte, shift);
-  }
-  else
-  {
+  } else {
     bitClear(tmpByte, shift);
   }
   write(reg_addr, sub_addr, tmpByte);
@@ -1466,8 +1360,7 @@ void DWM3000Class::setBit(int reg_addr, int sub_addr, int shift, bool b)
  @param sub_addr The registers sub address
  @param shift The bit that should be modified, relative to the base and sub address (0 for bit 0, 1 for bit 1, etc.)
 */
-void DWM3000Class::setBitHigh(int reg_addr, int sub_addr, int shift)
-{
+void DWM3000Class::setBitHigh(int reg_addr, int sub_addr, int shift) {
   setBit(reg_addr, sub_addr, shift, 1);
 }
 
@@ -1477,8 +1370,7 @@ void DWM3000Class::setBitHigh(int reg_addr, int sub_addr, int shift)
  @param sub_addr The registers sub address
  @param shift The bit that should be modified, relative to the base and sub address (0 for bit 0, 1 for bit 1, etc.)
 */
-void DWM3000Class::setBitLow(int reg_addr, int sub_addr, int shift)
-{
+void DWM3000Class::setBitLow(int reg_addr, int sub_addr, int shift) {
   setBit(reg_addr, sub_addr, shift, 0);
 }
 
@@ -1490,21 +1382,17 @@ void DWM3000Class::setBitLow(int reg_addr, int sub_addr, int shift)
  Writes a Fast Command to the chip (See DWM3000 User Manual chapter 9 for more)
  @param cmd The command that should be sent
 */
-void DWM3000Class::writeFastCommand(int cmd)
-{
-  if (DEBUG_OUTPUT)
-    Serial.print("[INFO] Executing short command: ");
+void DWM3000Class::writeFastCommand(int cmd) {
 
   int header = 0;
 
   header = header | 0x1;
   header = header | (cmd & 0x1F) << 1;
   header = header | 0x80;
+  DEBUG_PRINT("[INFO] Executing short command: ");
+  DEBUG_PRINTLN(header, BIN);
 
-  if (DEBUG_OUTPUT)
-    Serial.println(header, BIN);
-
-  int header_arr[] = {header};
+  int header_arr[] = { header };
 
   sendBytes(header_arr, 1, 0);
 }
@@ -1523,8 +1411,7 @@ void DWM3000Class::writeFastCommand(int cmd)
  @param readWriteBit Defines if a read or write operation will be performed. 0 if data should be read back, 1 if only a write should be performed.
  @return Returns 0 or the result of the read operation
 */
-uint32_t DWM3000Class::readOrWriteFullAddress(uint32_t base, uint32_t sub, uint32_t data, uint32_t dataLen, uint32_t readWriteBit)
-{
+uint32_t DWM3000Class::readOrWriteFullAddress(uint32_t base, uint32_t sub, uint32_t data, uint32_t dataLen, uint32_t readWriteBit) {
   uint32_t header = 0x00;
 
   if (readWriteBit)
@@ -1532,8 +1419,7 @@ uint32_t DWM3000Class::readOrWriteFullAddress(uint32_t base, uint32_t sub, uint3
 
   header = header | ((base & 0x1F) << 1);
 
-  if (sub > 0)
-  {
+  if (sub > 0) {
     header = header | 0x40;
     header = header << 8;
     header = header | ((sub & 0x7F) << 2);
@@ -1542,64 +1428,47 @@ uint32_t DWM3000Class::readOrWriteFullAddress(uint32_t base, uint32_t sub, uint3
   uint32_t header_size = header > 0xFF ? 2 : 1;
   uint32_t res = 0;
 
-  if (!readWriteBit)
-  {
+  if (!readWriteBit) {
     int headerArr[header_size];
 
-    if (header_size == 1)
-    {
+    if (header_size == 1) {
       headerArr[0] = header;
-    }
-    else
-    {
+    } else {
       headerArr[0] = (header & 0xFF00) >> 8;
       headerArr[1] = header & 0xFF;
     }
 
     res = (uint32_t)sendBytes(headerArr, header_size, 4);
     return res;
-  }
-  else
-  {
+  } else {
     uint32_t payload_bytes = 0;
-    if (dataLen == 0)
-    {
-      if (data > 0)
-      {
+    if (dataLen == 0) {
+      if (data > 0) {
         uint32_t payload_bits = countBits(data);
-        payload_bytes = (payload_bits - (payload_bits % 8)) / 8; // calc the used bytes for transaction
-        if ((payload_bits % 8) > 0)
-        {
+        payload_bytes = (payload_bits - (payload_bits % 8)) / 8;  // calc the used bytes for transaction
+        if ((payload_bits % 8) > 0) {
           payload_bytes++;
         }
-      }
-      else
-      {
+      } else {
         payload_bytes = 1;
       }
-    }
-    else
-    {
+    } else {
       payload_bytes = dataLen;
     }
     int payload[header_size + payload_bytes];
 
-    if (header_size == 1)
-    {
+    if (header_size == 1) {
       payload[0] = header;
-    }
-    else
-    {
+    } else {
       payload[0] = (header & 0xFF00) >> 8;
       payload[1] = header & 0xFF;
     }
 
-    for (int i = 0; i < payload_bytes; i++)
-    {
+    for (int i = 0; i < payload_bytes; i++) {
       payload[header_size + i] = (data >> i * 8) & 0xFF;
     }
 
-    res = (uint32_t)sendBytes(payload, 2 + payload_bytes, 0); // "2 +" because the first 2 bytes are the header part
+    res = (uint32_t)sendBytes(payload, 2 + payload_bytes, 0);  // "2 +" because the first 2 bytes are the header part
     return res;
   }
 }
@@ -1611,32 +1480,23 @@ uint32_t DWM3000Class::readOrWriteFullAddress(uint32_t base, uint32_t sub, uint3
  @param recLen The length of bytes that should be received back after sending the data b
  @return Returns 0 or the received bytes from the chip
  */
-uint32_t DWM3000Class::sendBytes(int b[], int lenB, int recLen)
-{
+uint32_t DWM3000Class::sendBytes(int b[], int lenB, int recLen) {
   digitalWrite(CHIP_SELECT_PIN, LOW);
-  for (int i = 0; i < lenB; i++)
-  {
+  for (int i = 0; i < lenB; i++) {
     SPI.transfer(b[i]);
   }
   int rec;
   uint32_t val, tmp;
-  if (recLen > 0)
-  {
-    for (int i = 0; i < recLen; i++)
-    {
+  if (recLen > 0) {
+    for (int i = 0; i < recLen; i++) {
       tmp = SPI.transfer(0x00);
-      if (i == 0)
-      {
-        val = tmp; // Read first 4 octets
-      }
-      else
-      {
+      if (i == 0) {
+        val = tmp;  // Read first 4 octets
+      } else {
         val |= (uint32_t)tmp << 8 * i;
       }
     }
-  }
-  else
-  {
+  } else {
     val = 0;
   }
   digitalWrite(CHIP_SELECT_PIN, HIGH);
@@ -1650,12 +1510,11 @@ uint32_t DWM3000Class::sendBytes(int b[], int lenB, int recLen)
 /*
  Clears the Always On register. This register stores information as long as power is supplied to the chip.
 */
-void DWM3000Class::clearAONConfig()
-{
+void DWM3000Class::clearAONConfig() {
   write(AON_REG, NO_OFFSET, 0x00, 2);
   write(AON_REG, 0x14, 0x00, 1);
 
-  write(AON_REG, 0x04, 0x00, 1); // clear control of aon reg
+  write(AON_REG, 0x04, 0x00, 1);  // clear control of aon reg
 
   write(AON_REG, 0x04, 0x02);
 
@@ -1670,8 +1529,7 @@ void DWM3000Class::clearAONConfig()
  Helper function to count the bits of a number
  return length of a number in bits
 */
-unsigned int DWM3000Class::countBits(unsigned int number)
-{
+unsigned int DWM3000Class::countBits(unsigned int number) {
   return (int)log2(number) + 1;
 }
 
@@ -1679,43 +1537,39 @@ unsigned int DWM3000Class::countBits(unsigned int number)
  Checks if a DeviceID can be read from the device (if not, SPI can not connect to the chip). Acts as a sanity check.
  @return 1 if DeviceID could be read; 0 if not.
 */
-int DWM3000Class::checkForDevID()
-{
+int DWM3000Class::checkForDevID() {
   int res = read(GEN_CFG_AES_LOW_REG, NO_OFFSET);
-  if (res != 0xDECA0302 && res != 0xDECA0312)
-  {
+  if (res != 0xDECA0302 && res != 0xDECA0312) {
     Serial.println("[ERROR] DEV_ID IS WRONG!");
     return 0;
   }
   return 1;
 }
 
-void resetRadio()
-{
-  Serial.println("[INFO] Performing radio reset...");
-  DWM3000.softReset();
-  delay(100);
-  DWM3000.clearSystemStatus();
-  DWM3000.configureAsTX();
-  DWM3000.standardRX();
+void DWM3000Class::debugRXFrame() {
+  DEBUG_PRINTF(
+    "[INFO] RX: %02X %02X %02X %02X\n",
+    read(0x12, 0x00),
+    read(0x12, 0x01),
+    read(0x12, 0x02),
+    read(0x12, 0x03));
 }
 
-void setup()
-{
+
+void setup() {
+  delay(1000);
   Serial.begin(115200);
+  Serial.println("[INFO] Entering setup");
   DWM3000.begin();
   DWM3000.hardReset();
   delay(200);
 
-  if (!DWM3000.checkSPI())
-  {
+  if (!DWM3000.checkSPI()) {
     Serial.println("[ERROR] Could not establish SPI Connection to DWM3000!");
-    while (1)
-      ;
+    while (1);
   }
 
-  while (!DWM3000.checkForIDLE())
-  {
+  while (!DWM3000.checkForIDLE()) {
     Serial.println("[ERROR] IDLE1 FAILED\r");
     delay(1000);
   }
@@ -1723,11 +1577,9 @@ void setup()
   DWM3000.softReset();
   delay(200);
 
-  if (!DWM3000.checkForIDLE())
-  {
+  if (!DWM3000.checkForIDLE()) {
     Serial.println("[ERROR] IDLE2 FAILED\r");
-    while (1)
-      ;
+    while (1);
   }
 
   DWM3000.init();
@@ -1749,157 +1601,188 @@ void setup()
   DWM3000.configureAsTX();
   DWM3000.clearSystemStatus();
   DWM3000.standardRX();
-  curr_stage=0;
 }
 
-void loop()
-{
-  const int old_stage=curr_stage;
-  if (DWM3000.receivedFrameSucc() == 1 && DWM3000.ds_getStage() == 1 && DWM3000.getDestinationID() == ANCHOR_ID)
-  {
-    // Reset session if new ranging request arrives
-    if (curr_stage != 0)
-    {
-      Serial.println("[INFO] New request - resetting session");
-      curr_stage = 0;
-      t_roundB = 0;
-      t_replyB = 0;
-    }
-  }
-  switch (curr_stage)
-  {
-  case 0: // Await ranging
-    t_roundB = 0;
-    t_replyB = 0;
-    last_ranging_time = millis(); // Reset timeout timer
-
-    if (rx_status = DWM3000.receivedFrameSucc())  // Check Poll Received
-    {
-      DWM3000.clearSystemStatus();
-      if (rx_status == 1)
-      { // If frame reception was successful
-        // Only respond if frame is addressed to us
-        if (DWM3000.getDestinationID() == ANCHOR_ID)
-        {
-          if (DWM3000.ds_isErrorFrame())
-          {
-            Serial.println("[WARNING] Received error frame!");
-            curr_stage = 0;
-            DWM3000.standardRX();
-          }
-          else if (DWM3000.ds_getStage() != 1)
-          {
-            Serial.print("[WARNING] Unexpected stage: ");
-            Serial.println(DWM3000.ds_getStage());
-            DWM3000.ds_sendErrorFrame();
-            DWM3000.standardRX();
-            curr_stage = 0;
-          }
-          else
-          {
-            curr_stage = 1; // Move to send response
-          }
-        }
-        else
-        {
-          // Not for us, go back to RX
-          DWM3000.standardRX();
-        }
-      }
-      else
-      {
-        Serial.println("[ERROR] Receiver Error occurred!");
-        DWM3000.clearSystemStatus();
-      }
-    }
-    else if (millis() - last_ranging_time > RESPONSE_TIMEOUT_MS)
-    {
-      Serial.println("[WARNING] Timeout waiting for ranging request");
-      if (++retry_count > MAX_RETRIES)
-      {
-        Serial.println("[ERROR] Max retries reached, resetting radio");
-        resetRadio();
-        retry_count = 0;
-      }
-      DWM3000.standardRX(); // Reset to listening mode
-    }
-    break;
-
-  case 1: // Ranging received. Sending response
-    DWM3000.ds_sendFrame(2);  // Sends "Response" (Stage 2)
-
-    rx = DWM3000.readRXTimestamp(); // Reads T2 (Time Poll Arrived)
-    tx = DWM3000.readTXTimestamp(); // Reads T3 (Time Response Sent)
-
-    t_replyB = tx - rx; // Calculates t_replyB (T3 - T2)
-    curr_stage = 2; // Move to wait for Final
-    last_ranging_time = millis(); // Reset timeout timer
-    break;
-
-  case 2: // Awaiting response
-    if (rx_status = DWM3000.receivedFrameSucc())  // Check Final Received
-    {
-      retry_count = 0; // Reset on successful response
-      DWM3000.clearSystemStatus();
-      if (rx_status == 1)
-      { // If frame reception was successful
-        if (DWM3000.ds_isErrorFrame())
-        {
-          Serial.println("[WARNING] Received error frame!");
-          curr_stage = 0;
-          DWM3000.standardRX();
-        }
-        else if (DWM3000.ds_getStage() != 3)
-        {
-          Serial.print("[WARNING] Unexpected stage: ");
-          Serial.println(DWM3000.ds_getStage());
-          DWM3000.ds_sendErrorFrame();
-          DWM3000.standardRX();
-          curr_stage = 0;
-        }
-        else
-        {
-          curr_stage = 3; // Move to calculate and report
-        }
-      }
-      else
-      {
-        Serial.println("[ERROR] Receiver Error occurred!");
-        DWM3000.clearSystemStatus();
-      }
-    }
-    else if (millis() - last_ranging_time > RESPONSE_TIMEOUT_MS)
-    {
-      Serial.println("[WARNING] Timeout waiting for second response");
-      if (++retry_count > MAX_RETRIES)
-      {
-        Serial.println("[ERROR] Max retries reached, resetting radio");
-        resetRadio();
-        retry_count = 0;
-      }
-      curr_stage = 0;
-      DWM3000.standardRX();
-    }
-    break;
-
-  case 3: // Second response received. Sending information frame
-    rx = DWM3000.readRXTimestamp(); // Reads T6 (Time Final Arrived)
-    t_roundB = rx - tx; // Calculate Anchor's Round Trip: (Time Final Arrived - Time Response Sent)
-    DWM3000.ds_sendRTInfo(t_roundB, t_replyB);  // Sends DATA packet containing these two integers
-
-    curr_stage = 0; // Reset for next ranging
-    DWM3000.standardRX();
-    break;
-
-  default:
-    Serial.print("[ERROR] Entered unknown stage (");
-    Serial.print(curr_stage);
-    Serial.println("). Reverting back to stage 0");
-
+bool validateStage(uint8_t expectedStage) {
+  if (DWM3000.ds_isErrorFrame()) {
+    Serial.println("[WARNING] Received error frame!");
     curr_stage = 0;
     DWM3000.standardRX();
-    break;
+    return false;
   }
-  if(curr_stage==old_stage) return;
-  Serial.printf("%d -> %d \n",old_stage,curr_stage);
+
+  int stage = DWM3000.ds_getStage();
+
+  if (stage == expectedStage)
+    return true;
+
+  Serial.printf("[WARNING] Unexpected stage: %d Expected %d\n",
+                stage, expectedStage);
+
+  DWM3000.ds_sendErrorFrame();
+  DWM3000.clearSystemStatus();
+  DWM3000.standardRX();
+  curr_stage = 0;
+  return false;
+}
+
+void checkForNewRangingRequest() {
+  if (DWM3000.receivedFrameSucc() != 1)
+    return;
+
+  if (DWM3000.ds_getStage() != 1)
+    return;
+
+  if (DWM3000.getDestinationID() != ANCHOR_ID)
+    return;
+
+  if (curr_stage == 0)
+    return;
+
+  Serial.println("[INFO] New request - resetting session");
+  curr_stage = 0;
+  t_roundB = 0;
+  t_replyB = 0;
+}
+bool waitForFrame() {
+  rx_status = DWM3000.receivedFrameSucc();
+
+  if (!rx_status)
+    return false;
+  DWM3000.debugRXFrame();
+  return true;
+}
+bool handleReceiverError() {
+  if (rx_status == 1)
+    return false;
+
+  Serial.println("[ERROR] Receiver Error occurred!");
+
+  DWM3000.clearSystemStatus();
+  DWM3000.standardRX();
+
+  return true;
+}
+bool validateDestination() {
+  if (DWM3000.getDestinationID() == ANCHOR_ID)
+    return true;
+
+  DWM3000.standardRX();
+  return false;
+}
+void handleInvalidStage() {
+  Serial.printf("[ERROR] Entered unknown stage (%d). Reverting back to stage 0\r\n", curr_stage);
+  curr_stage = 0;
+  DWM3000.standardRX();
+}
+void handleStage1() {
+  DWM3000.ds_sendFrame(2);
+
+  rx = DWM3000.readRXTimestamp();
+  tx = DWM3000.readTXTimestamp();
+
+  t_replyB = tx - rx;
+
+  curr_stage = 2;
+  last_ranging_time = millis();
+}
+void handleStage0Timeout() {
+  if (millis() - last_ranging_time <= RESPONSE_TIMEOUT_MS)
+    return;
+
+  Serial.println("[WARNING] Timeout waiting for ranging request");
+
+  if (++retry_count > MAX_RETRIES) {
+    Serial.println("[ERROR] Max retries reached, resetting radio");
+    resetRadio();
+    retry_count = 0;
+  }
+
+  DWM3000.standardRX();
+}
+void handleStage0() {
+  t_roundB = 0;
+  t_replyB = 0;
+  last_ranging_time = millis();
+
+  if (!waitForFrame()) {
+    handleStage0Timeout();
+    return;
+  }
+
+  if (handleReceiverError())
+    return;
+
+  if (!validateDestination())
+    return;
+
+  if (validateStage(1))
+    curr_stage = 1;
+  DWM3000.clearSystemStatus();
+}
+
+void handleStage2Timeout() {
+  if (millis() - last_ranging_time <= RESPONSE_TIMEOUT_MS)
+    return;
+
+  Serial.println("[WARNING] Timeout waiting for second response");
+
+  if (++retry_count > MAX_RETRIES) {
+    Serial.println("[ERROR] Max retries reached, resetting radio");
+    resetRadio();
+    retry_count = 0;
+  }
+
+  curr_stage = 0;
+  DWM3000.standardRX();
+}
+void handleStage2() {
+  if (!waitForFrame()) {
+    handleStage2Timeout();
+    return;
+  }
+
+  retry_count = 0;
+
+  if (handleReceiverError())
+    return;
+
+
+  if (validateStage(3))
+    curr_stage = 3;
+  DWM3000.clearSystemStatus();
+}
+void handleStage3() {
+  rx = DWM3000.readRXTimestamp();
+
+  t_roundB = rx - tx;
+
+  DWM3000.ds_sendRTInfo(t_roundB, t_replyB);
+
+  curr_stage = 0;
+}
+void loop() {
+  checkForNewRangingRequest();
+
+  switch (curr_stage) {
+    case 0:
+      handleStage0();
+      break;
+
+    case 1:
+      handleStage1();
+      break;
+
+    case 2:
+      handleStage2();
+      break;
+
+    case 3:
+      handleStage3();
+      break;
+
+    default:
+      handleInvalidStage();
+      break;
+  }
 }
